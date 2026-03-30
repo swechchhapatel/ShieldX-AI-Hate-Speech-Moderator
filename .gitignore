@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyc
+*.pyd
+*.sqlite3
+*.db
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+
+# Packages
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# Node / Chrome extension local files
+npm-debug.log
+yarn-error.log
+
+# Temporary files
+*.swp
+*.swo
