@@ -1,0 +1,55 @@
+<!-- popup.html - UI for extension popup interface -->
+
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      width: 240px;
+      font-family: 'Roboto', Arial, sans-serif;
+      padding: 20px;
+      margin: 0;
+      background: radial-gradient(rgb(181, 222, 116),rgb(255, 255, 178));
+      color: #333;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h4 {
+      margin: 0 0 15px 0;
+      font-weight: 700;
+      font-size: 20px;
+      font-style: italic;
+    }
+
+    button {
+      width: 80%;
+      padding: 10px 0;
+      border: none;
+      border-radius: 25px;
+      background: linear-gradient(135deg, #6f9e23, #1c5a91);
+      color: white;
+      font-weight: 500;
+      font-size: 15px;
+      cursor: pointer;
+      transition: background 0.3s ease, transform 0.2s ease;
+    }
+
+    button:hover {
+      background: linear-gradient(135deg, #7ba931, #3173ac);
+      transform: translateY(-2px);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h4>Hate Speech Detector</h4>
+    <button id="scan">Scan This Page</button>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
