@@ -1,109 +1,68 @@
-// Status display
-const statusDiv = document.getElementById('status');
+// popup.js — Control panel for AI Moderator
 
-function showStatus(message, duration = 3000) {
-  statusDiv.textContent = message;
-  statusDiv.style.display = 'block';
-  setTimeout(() => {
-    statusDiv.style.display = 'none';
-  }, duration);
+const activateBtn = document.getElementById("activateBtn");
+const deactivateBtn = document.getElementById("deactivateBtn");
+const scanBtn = document.getElementById("scanBtn");
+const statusText = document.getElementById("status");
+
+function updateStatus(message) {
+  statusText.innerHTML = `Status: <strong>${message}</strong>`;
 }
 
-// Check Selected Text Button
-document.getElementById('checkButton').addEventListener('click', async () => {
-  const resultDiv = document.getElementById('result');
-  resultDiv.textContent = 'Analyzing...';
-  resultDiv.className = '';
-  
-  let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  
-  chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    function: getSelectedText,
-  }, (injectionResults) => {
-    const selectedText = injectionResults[0]?.result;
-    
-    if (!selectedText) {
-      resultDiv.textContent = "\u26A0 Please select some text first";
-      resultDiv.className = "";
+// Ping current tab to check if contentScript is running
+function pingContentScript(callback) {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs.length === 0) return callback(false);
+    chrome.tabs.sendMessage(tabs[0].id, { action: "ping" }, (response) => {
+      if (chrome.runtime.lastError || !response) {
+        callback(false);
+      } else {
+        callback(true);
+      }
+    });
+  });
+}
+
+// Activate continuous moderation
+activateBtn.addEventListener("click", () => {
+  pingContentScript((isRunning) => {
+    if (!isRunning) {
+      updateStatus("Content script not running");
+      alert("⚠️ Please refresh the page before activating.");
       return;
     }
-
-    fetch('http://127.0.0.1:5000/predict', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: selectedText })
-    })
-    .then(response => response.json())
-    .then(data => {
-      const confidencePercent = Math.round(data.confidence * 100);
-      resultDiv.textContent = `${data.label === "Safe" ? "\u2713" : "\u26A0"} ${data.label} (${confidencePercent}%)`;
-      resultDiv.className = data.label === "Safe" ? "safe" : "toxic";
-      resultDiv.style.display = 'block';
-    })
-    .catch(error => {
-      console.error('Error:', error);
-      resultDiv.textContent = "\u274C API Error - Is the Flask server running?";
-      resultDiv.className = "";
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      chrome.tabs.sendMessage(tabs[0].id, { action: "activateModeration" });
+      updateStatus("Moderation Activated ✅");
     });
   });
 });
 
-// Auto-Moderation Toggle
-document.getElementById('autoModerationToggle').addEventListener('change', async (e) => {
-  const enabled = e.target.checked;
-  let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  
-  chrome.tabs.sendMessage(tab.id, {
-    action: 'toggleModeration',
-    enabled: enabled
-  }, (response) => {
-    if (chrome.runtime.lastError) {
-      showStatus('\u26A0 Please refresh the page');
-      return;
-    }
-    showStatus(enabled ? '\u2713 Auto-moderation enabled' : '\u23F8 Auto-moderation paused');
+// Deactivate continuous moderation
+deactivateBtn.addEventListener("click", () => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.tabs.sendMessage(tabs[0].id, { action: "deactivateModeration" });
+    updateStatus("Moderation Deactivated ⛔");
   });
 });
 
-// Scan Page Now Button
-document.getElementById('scanButton').addEventListener('click', async () => {
-  const button = document.getElementById('scanButton');
-  const originalText = button.textContent;
-  button.textContent = '\u23F3 Scanning...';
-  button.disabled = true;
-  
-  let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  
-  chrome.tabs.sendMessage(tab.id, {
-    action: 'scanNow'
-  }, (response) => {
-    button.textContent = originalText;
-    button.disabled = false;
-    
-    if (chrome.runtime.lastError) {
-      showStatus('\u26A0 Please refresh the page');
+// Manual scan
+scanBtn.addEventListener("click", () => {
+  pingContentScript((isRunning) => {
+    if (!isRunning) {
+      updateStatus("Content script not running");
+      alert("⚠️ Please refresh the page and try again.");
       return;
     }
-    showStatus('\u2713 Page scanned successfully');
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      chrome.tabs.sendMessage(tabs[0].id, { action: "scanNow" });
+      updateStatus("Scanning Page 🔍");
+    });
   });
 });
 
-// This function is executed inside the web page's context
-function getSelectedText() {
-  return window.getSelection().toString();
-}
-
-// Initialize - check if content script is loaded
-document.addEventListener('DOMContentLoaded', async () => {
-  let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  
-  // Hide status initially
-  statusDiv.style.display = 'none';
-  
-  chrome.tabs.sendMessage(tab.id, { action: 'ping' }, (response) => {
-    if (chrome.runtime.lastError) {
-      showStatus('\u2139 Refresh page to enable auto-moderation', 5000);
-    }
-  });
+// Initial check
+pingContentScript((isRunning) => {
+  if (isRunning) updateStatus("Ready ✅");
+  else updateStatus("Content script not running ❌");
 });

@@ -1,112 +1,161 @@
+# ======================================================
+# AI Hate Speech & Cyberbullying Moderator (Flask API)
+# ======================================================
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import joblib
 import re
+import nltk
+import traceback
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
 
-# Load the model and vectorizer
-model = joblib.load('hate_speech_model.pkl')
-tfidf_vectorizer = joblib.load('tfidf_vectorizer.pkl')
+# ---------------------------------------
+# NLTK Data Setup
+# ---------------------------------------
+nltk.download('punkt', quiet=True)
+nltk.download('stopwords', quiet=True)
+nltk.download('wordnet', quiet=True)
 
-# Initialize preprocessing tools
+# ---------------------------------------
+# Model and Vectorizer Loading
+# ---------------------------------------
+try:
+    model = joblib.load('hate_speech_model.pkl')
+    tfidf_vectorizer = joblib.load('tfidf_vectorizer.pkl')
+    print("✅ Model and vectorizer loaded successfully.")
+except Exception as e:
+    print(f"❌ Failed to load model/vectorizer: {e}")
+    raise e
+
+# ---------------------------------------
+# Preprocessing Setup
+# ---------------------------------------
 lemmatizer = WordNetLemmatizer()
 stop_words = set(stopwords.words('english'))
 
-def preprocess_text(text):
+def preprocess_text(text: str) -> str:
+    """Clean, tokenize, and lemmatize text"""
     text = text.lower()
-    text = re.sub(r'http\S+', '', text)
-    text = re.sub(r'[^a-zA-Z\s]', '', text)
+    text = re.sub(r"http\S+", "", text)
+    text = re.sub(r"[^a-z\s]", "", text)
     tokens = word_tokenize(text)
-    tokens = [lemmatizer.lemmatize(word) for word in tokens if word not in stop_words]
-    return ' '.join(tokens)
+    tokens = [lemmatizer.lemmatize(t) for t in tokens if t not in stop_words]
+    return " ".join(tokens)
 
+# ---------------------------------------
+# Flask App Configuration
+# ---------------------------------------
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app, resources={r"/*": {"origins": "*"}})
+  # Enable CORS for all routes
 
+# ---------------------------------------
+# /predict Route (for manual text testing)
+# ---------------------------------------
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
-        # Get JSON data from the request
-        data = request.get_json()
-        text = data.get('text', '')
-
+        data = request.get_json(force=True)
+        text = data.get('text', '').strip()
         if not text:
-            return jsonify({'error': 'No text provided'}), 400
+            return jsonify({'error': 'Empty text', 'confidence': 0.0, 'label': 'Unknown'}), 400
 
-        # Preprocess the text
-        cleaned_text = preprocess_text(text)
-        # Vectorize the text
-        text_vector = tfidf_vectorizer.transform([cleaned_text])
-        # Make prediction
-        prediction = model.predict(text_vector)[0]
-        # Get probability (confidence score)
-        probability = model.predict_proba(text_vector)[0]
+        cleaned = preprocess_text(text)
+        if not cleaned:
+            return jsonify({'error': 'No meaningful content after cleaning', 'confidence': 0.0, 'label': 'Unknown'}), 400
 
-        # Map prediction to label
-        label = "Hate Speech/Bullying" if prediction == 1 else "Safe"
-        confidence = probability[1] if prediction == 1 else probability[0]
+        vector = tfidf_vectorizer.transform([cleaned])
+        prediction = model.predict(vector)[0]
 
-        # Return the result
+        # Confidence Handling
+        try:
+            proba = model.predict_proba(vector)[0]
+            confidence = float(max(proba))
+        except Exception:
+            confidence = 0.5
+
+        label = "Hate Speech/Bullying" if int(prediction) == 1 else "Safe"
         return jsonify({
             'label': label,
-            'confidence': round(confidence, 4),
+            'confidence': round(confidence, 3),
             'original_text': text
         })
 
     except Exception as e:
+        print("❌ Error in /predict:", e)
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+# ---------------------------------------
+# /moderate Route (for Chrome Extension)
+# ---------------------------------------
 @app.route('/moderate', methods=['POST'])
 def moderate():
     """
-    Endpoint for bulk moderation of multiple texts
-    Expects: { "comments": [{"id": "unique_id", "text": "comment text"}, ...] }
-    Returns: { "results": [{"id": "unique_id", "is_hate": bool, "confidence": float, "text": "..."}, ...] }
+    Handles multiple comments at once for moderation.
+    Input:
+        {
+          "comments": [
+             {"id": "1", "text": "you are an idiot"},
+             {"id": "2", "text": "have a great day"}
+          ]
+        }
+    Output:
+        {
+          "results": [
+             {"id": "1", "is_hate": true, "confidence": 0.98, "text": "you are an idiot"},
+             {"id": "2", "is_hate": false, "confidence": 0.15, "text": "have a great day"}
+          ]
+        }
     """
     try:
-        data = request.get_json()
+        data = request.get_json(force=True)
         comments = data.get('comments', [])
-        
         if not comments:
-            return jsonify({'error': 'No comments provided'}), 400
-        
+            return jsonify({'error': 'No comments received'}), 400
+
         results = []
-        for comment in comments:
-            comment_id = comment.get('id', '')
-            text = comment.get('text', '')
-            
-            if not text:
-                results.append({
-                    'id': comment_id,
-                    'is_hate': False,
-                    'confidence': 0,
-                    'text': text,
-                    'error': 'Empty text'
-                })
-                continue
-            
-            # Preprocess and predict
-            cleaned_text = preprocess_text(text)
-            text_vector = tfidf_vectorizer.transform([cleaned_text])
-            prediction = model.predict(text_vector)[0]
-            probability = model.predict_proba(text_vector)[0]
-            
-            is_hate = prediction == 1
-            confidence = probability[1] if is_hate else probability[0]
-            
+        texts = [preprocess_text(c.get('text', '')) for c in comments]
+        valid_indices = [i for i, t in enumerate(texts) if t.strip()]
+
+        if not valid_indices:
+            return jsonify({'results': []})
+
+        # Vectorize all valid texts in one go for performance
+        vectors = tfidf_vectorizer.transform([texts[i] for i in valid_indices])
+        preds = model.predict(vectors)
+
+        try:
+            probas = model.predict_proba(vectors)
+        except Exception:
+            probas = [[0.5, 0.5] for _ in preds]
+
+        for i, idx in enumerate(valid_indices):
+            text = comments[idx].get('text', '')
+            comment_id = comments[idx].get('id', '')
+            prediction = preds[i]
+            confidence = float(max(probas[i]))
+
             results.append({
                 'id': comment_id,
-                'is_hate': bool(is_hate),
-                'confidence': round(float(confidence), 4),
-                'text': text
+                'text': text,
+                'is_hate': bool(prediction == 1),
+                'confidence': round(confidence, 3)
             })
-        
+
         return jsonify({'results': results})
-    
+
     except Exception as e:
+        print("❌ Error in /moderate:", e)
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+# ---------------------------------------
+# Server Entry Point
+# ---------------------------------------
 if __name__ == '__main__':
-    app.run(debug=True, port=5000) # Runs on http://127.0.0.1:5000
+    print("🚀 AI Hate Speech Moderator running at: http://127.0.0.1:5000")
+    app.run(host='127.0.0.1', port=5000, debug=True)

@@ -153,3 +153,7 @@ if __name__ == "__main__":
     print(f"\n{'='*50}")
     print("TESTING COMPLETED!")
     print(f"{'='*50}")
+
+    y_pred = model.predict(tfidf_vectorizer.transform(df['comment_text'].apply(preprocess_text)))
+    print("\nOverall Classification Report:")
+    print(classification_report(df['toxic'], y_pred, target_names=['Safe', '    Toxic']))   

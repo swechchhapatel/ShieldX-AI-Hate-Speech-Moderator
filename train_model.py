@@ -30,17 +30,27 @@ print("Dataset loaded and target created.")
 lemmatizer = WordNetLemmatizer()
 stop_words = set(stopwords.words('english'))
 
+df['comment_text'] = df['comment_text'].fillna('')
+
 def preprocess_text(text):
-    # Lowercasing
+    if not isinstance(text, str):
+        return ""
+
     text = text.lower()
-    # Remove URLs, special characters, and numbers
     text = re.sub(r'http\S+', '', text)
     text = re.sub(r'[^a-zA-Z\s]', '', text)
-    # Tokenization
+    text = re.sub(r'@\w+', '', text)
+    text = re.sub(r'\brt\b', '', text)
+    text = re.sub(r'&\w+;', '', text)
+
+    text = re.sub(r'\s+', ' ', text).strip()
+
     tokens = word_tokenize(text)
-    # Remove stopwords and lemmatize
     tokens = [lemmatizer.lemmatize(word) for word in tokens if word not in stop_words]
+
     return ' '.join(tokens)
+
+
 
 print("Preprocessing text... This may take a while.")
 df['cleaned_comment_text'] = df['comment_text'].apply(preprocess_text)
@@ -63,11 +73,12 @@ X_test_tfidf = tfidf_vectorizer.transform(X_test)
 
 # Train a Logistic Regression Model
 print("Training model...")
-model = LogisticRegression(random_state=42, max_iter=1000)
+model = LogisticRegression(random_state=42, max_iter=1000, class_weight={0: 1, 1: 3}) 
 model.fit(X_train_tfidf, y_train)
 
 # Make predictions
-y_pred = model.predict(X_test_tfidf)
+y_probs = model.predict_proba(X_test_tfidf)[:,1]
+y_pred = (y_probs > 0.3).astype(int)   
 
 # Evaluate the model
 accuracy = accuracy_score(y_test, y_pred)
