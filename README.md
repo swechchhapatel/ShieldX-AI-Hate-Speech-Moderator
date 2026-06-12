@@ -130,7 +130,7 @@ Tuned class weights experimentally to balance precision–recall tradeoff for mi
   * Detect obfuscated abusive language
   * Improve robustness on social media text
 * **Performance (Test Set)**:
-  * Accuracy: **~88%**
+  * Accuracy: **~87%**
   * Strong performance on majority class (Neutral)
   * Improved recall for Hate Speech via class weighting
 * **Training Script**: `train_model.py`
